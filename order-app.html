@@ -828,6 +828,99 @@ function initCatDrag() {
   function onMouseUp(e) { document.removeEventListener('mousemove',onMouseMove); document.removeEventListener('mouseup',onMouseUp); finish(getIdxAt(e.clientY)); }
 }
 
+// ===== MENU DRAG =====
+function initMenuDrag() {
+  const el = document.getElementById('menu-list');
+  if (!el) return;
+  let ghost = null, dragSrcId = null, lastOverEl = null;
+
+  el.querySelectorAll('[data-menu-handle]').forEach(handle => {
+    handle.addEventListener('touchstart', onTouchStart, { passive: false });
+    handle.addEventListener('mousedown', onMouseDown);
+  });
+
+  function getItems() { return Array.from(el.querySelectorAll('.menu-item[data-id]')); }
+
+  function createGhost(row, x, y) {
+    ghost = document.createElement('div');
+    ghost.className = 'dragging-ghost';
+    ghost.textContent = row.querySelector('.menu-item-name').textContent;
+    ghost.style.left = (x - 40) + 'px';
+    ghost.style.top  = (y - 24) + 'px';
+    document.body.appendChild(ghost);
+    row.style.opacity = '0.4';
+  }
+  function moveGhost(x, y) { if (ghost) { ghost.style.left=(x-40)+'px'; ghost.style.top=(y-24)+'px'; } }
+
+  function getItemAt(y) {
+    const items = getItems();
+    for (let i = 0; i < items.length; i++) {
+      const r = items[i].getBoundingClientRect();
+      if (y < r.top + r.height / 2) return items[i];
+    }
+    return items[items.length - 1];
+  }
+
+  function highlightOver(overEl) {
+    getItems().forEach(it => it.style.borderTopColor = (it === overEl && it.dataset.id !== dragSrcId) ? 'var(--amber)' : '');
+  }
+
+  function finish(overEl) {
+    if (ghost) { ghost.remove(); ghost = null; }
+    getItems().forEach(it => { it.style.opacity=''; it.style.borderTopColor=''; });
+    if (dragSrcId && overEl && overEl.dataset.id !== dragSrcId) {
+      const srcIdx = menus.findIndex(m => m.id === dragSrcId);
+      const dstIdx = menus.findIndex(m => m.id === overEl.dataset.id);
+      if (srcIdx !== -1 && dstIdx !== -1) {
+        const moved = menus.splice(srcIdx, 1)[0];
+        menus.splice(dstIdx, 0, moved);
+        renderMenuList();
+        saveToGAS();
+      }
+    }
+    dragSrcId = null; lastOverEl = null;
+  }
+
+  function onTouchStart(e) {
+    e.preventDefault();
+    const row = e.currentTarget.closest('.menu-item');
+    dragSrcId = row.dataset.id;
+    const t = e.touches[0];
+    createGhost(row, t.clientX, t.clientY);
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
+    document.addEventListener('touchend', onTouchEnd);
+  }
+  function onTouchMove(e) {
+    e.preventDefault();
+    const t = e.touches[0];
+    moveGhost(t.clientX, t.clientY);
+    const over = getItemAt(t.clientY);
+    if (over !== lastOverEl) { highlightOver(over); lastOverEl = over; }
+  }
+  function onTouchEnd(e) {
+    document.removeEventListener('touchmove', onTouchMove);
+    document.removeEventListener('touchend', onTouchEnd);
+    finish(getItemAt(e.changedTouches[0].clientY));
+  }
+  function onMouseDown(e) {
+    const row = e.currentTarget.closest('.menu-item');
+    dragSrcId = row.dataset.id;
+    createGhost(row, e.clientX, e.clientY);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }
+  function onMouseMove(e) {
+    moveGhost(e.clientX, e.clientY);
+    const over = getItemAt(e.clientY);
+    if (over !== lastOverEl) { highlightOver(over); lastOverEl = over; }
+  }
+  function onMouseUp(e) {
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+    finish(getItemAt(e.clientY));
+  }
+}
+
 // ===== MENU =====
 function renderMenuCatSelect() {
   ['menu-cat-input','menu-edit-cat'].forEach(id => {
@@ -860,8 +953,10 @@ function renderMenuList() {
     const items = menus.filter(m => m.cat === cat);
     if (!items.length) return;
     html += `<div style="margin-bottom:6px;padding:5px 8px;font-size:11px;font-weight:700;color:var(--amber-dim);letter-spacing:0.08em;">${cat}</div>`;
-    items.forEach(m => {
-      html += `<div class="menu-item">
+    items.forEach((m, midx) => {
+      const globalIdx = menus.indexOf(m);
+      html += `<div class="menu-item" data-id="${m.id}" data-idx="${globalIdx}">
+        <span class="drag-handle" data-menu-handle="true">⠿</span>
         <span class="menu-item-name">${m.name}</span>
         <span class="menu-item-price">¥${Number(m.price).toLocaleString()}</span>
         <button class="menu-item-edit" onclick="openMenuEditModal('${m.id}')">編集</button>
@@ -870,6 +965,7 @@ function renderMenuList() {
     });
   });
   el.innerHTML = html || '<div class="empty-state"><div class="empty-text">メニューなし</div></div>';
+  initMenuDrag();
 }
 function openMenuEditModal(id) {
   const m = menus.find(m => m.id === id);
@@ -1111,7 +1207,7 @@ document.head.appendChild(_style);
 document.getElementById('new-slip-name').addEventListener('keydown',e=>{if(e.key==='Enter')createSlip();});
 document.getElementById('cat-name-input').addEventListener('keydown',e=>{if(e.key==='Enter')addCategory();});
 document.getElementById('cat-edit-input').addEventListener('keydown',e=>{if(e.key==='Enter')saveCatEdit();});
-document.getElementById('menu-edit-name').addEventListener('keydown',e=>{if(e.key==='Enter')saveMenuEdit();});
+// menu-edit-name: Enterで確定しない（意図せず確定を防ぐ）
 
 // ===== INIT =====
 if (GAS_URL) { launchApp(); }
