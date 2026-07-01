@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="伝票管理">
+<meta name="mobile-web-app-capable" content="yes">
+<title>伝票管理</title>
+<style>
+  :root {
+    --bg: #1a1410;
+    --surface: #252018;
+    --surface2: #2e2819;
+    --border: #3d3520;
+    --amber: #e8a838;
+    --amber-dim: #a87828;
+    --amber-glow: #f5c866;
+    --red: #c94c2e;
+    --red-dim: #8a2a10;
+    --green: #4a8c5c;
+    --green-bright: #5db472;
+    --text: #f0e8d0;
+    --text-dim: #9a8f78;
+    --text-faint: #5a5040;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system,'Hiragino Sans','Noto Sans JP',sans-serif; font-size: 16px; min-height: 100vh; }
+
+  /* ===== SYNC STATUS ===== */
+  #sync-bar {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 6px 16px; font-size: 12px; color: var(--text-faint);
+    display: flex; align-items: center; gap: 8px; min-height: 32px;
+  }
+  #sync-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); flex-shrink: 0; }
+  #sync-dot.ok    { background: var(--green-bright); }
+  #sync-dot.error { background: var(--red); }
+  #sync-dot.syncing { background: var(--amber); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* ===== SETUP SCREEN ===== */
+  #setup-screen {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 100vh; padding: 32px 20px; text-align: center;
+  }
+  .setup-title { font-size: 22px; font-weight: 700; color: var(--amber); margin-bottom: 8px; }
+  .setup-sub { font-size: 14px; color: var(--text-dim); line-height: 1.7; margin-bottom: 28px; }
+  .setup-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; width: 100%; max-width: 480px; text-align: left; margin-bottom: 16px; }
+  .setup-step { display: flex; gap: 12px; margin-bottom: 16px; align-items: flex-start; }
+  .setup-step:last-child { margin-bottom: 0; }
+  .step-num { width: 26px; height: 26px; border-radius: 50%; background: var(--amber-dim); color: var(--amber-glow); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+  .step-text { font-size: 14px; color: var(--text-dim); line-height: 1.6; }
+  .step-text a { color: var(--amber); text-decoration: none; }
+  .step-text code { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: 12px; color: var(--amber-glow); font-family: monospace; }
+  #url-input-wrap { margin-top: 20px; }
+  #gas-url-input {
+    width: 100%; background: var(--surface2); border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--text); font-size: 14px;
+    padding: 12px 14px; margin-bottom: 12px; -webkit-appearance: none;
+  }
+  #gas-url-input:focus { outline: none; border-color: var(--amber-dim); }
+  #gas-url-input::placeholder { color: var(--text-faint); }
+
+  /* ===== TABS ===== */
+  .tab-bar { display: flex; background: var(--surface); border-bottom: 2px solid var(--border); position: sticky; top: 0; z-index: 100; }
+  .tab-btn { flex: 1; padding: 14px 4px; background: none; border: none; color: var(--text-dim); font-size: 13px; font-weight: 600; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; }
+  .tab-btn.active { color: var(--amber); border-bottom-color: var(--amber); }
+
+  .tab-panel { display: none; padding: 18px 16px; max-width: 900px; margin: 0 auto; }
+  .tab-panel.active { display: block; }
+  .section-title { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: var(--amber-dim); text-transform: uppercase; margin-bottom: 12px; }
+
+  /* ===== BUTTONS ===== */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 12px 18px; border-radius: var(--radius-sm); border: none; font-size: 15px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+  .btn:active { transform: scale(0.97); }
+  .btn-amber { background: var(--amber); color: #1a1410; }
+  .btn-outline { background: transparent; border: 2px solid var(--border); color: var(--text-dim); }
+  .btn-outline:hover { border-color: var(--amber-dim); color: var(--amber); }
+  .btn-danger { background: var(--red-dim); color: #f0d0c0; border: 1px solid var(--red); }
+  .btn-green { background: var(--green); color: #d0f0dc; }
+  .btn-sm { padding: 8px 12px; font-size: 13px; }
+  .btn-lg { padding: 16px 24px; font-size: 17px; }
+
+  /* ===== INPUTS ===== */
+  input, select { background: var(--surface2); border: 1.5px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 15px; padding: 11px 14px; width: 100%; -webkit-appearance: none; }
+  input:focus, select:focus { outline: none; border-color: var(--amber-dim); }
+  input::placeholder { color: var(--text-faint); }
+  label { font-size: 13px; color: var(--text-dim); margin-bottom: 6px; display: block; }
+
+  /* ===== ORDERS ===== */
+  .orders-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .slip-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .slip-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .slip-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: var(--surface2); border-bottom: 1px solid var(--border); }
+  .slip-name { font-weight: 700; font-size: 16px; }
+  .slip-total { font-weight: 700; color: var(--amber); font-size: 15px; }
+  .slip-items { padding: 10px 14px; }
+  .slip-item-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-dim); padding: 3px 0; border-bottom: 1px dashed var(--text-faint); }
+  .slip-item-row:last-child { border-bottom: none; }
+  .slip-item-name { flex: 1; }
+  .slip-item-qty { color: var(--amber-dim); margin: 0 6px; }
+  .slip-item-price { font-weight: 600; color: var(--text); }
+  .slip-footer { padding: 10px 14px; display: flex; gap: 8px; border-top: 1px solid var(--border); }
+
+  /* ===== MENU TAB ===== */
+  .menu-form { display: grid; grid-template-columns: 1fr 120px auto auto; gap: 8px; align-items: end; margin-bottom: 20px; }
+  .menu-list { display: flex; flex-direction: column; gap: 8px; }
+  .menu-item { display: flex; align-items: center; gap: 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; }
+  .menu-item-name { flex: 1; font-weight: 600; }
+  .menu-item-price { font-weight: 700; color: var(--amber); min-width: 65px; text-align: right; }
+  .menu-item-edit { background: none; border: 1.5px solid var(--border); border-radius: 6px; color: var(--text-dim); font-size: 12px; padding: 4px 8px; cursor: pointer; }
+  .menu-item-edit:hover { border-color: var(--amber-dim); color: var(--amber); }
+  .menu-item-del { background: none; border: none; color: var(--text-faint); font-size: 18px; cursor: pointer; padding: 2px 6px; }
+  .menu-item-del:hover { color: var(--red); }
+  .divider { height: 1px; background: var(--border); margin: 16px 0; }
+
+  /* ===== CATEGORY TAB ===== */
+  .cat-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+  .cat-row { display: flex; align-items: center; gap: 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; transition: border-color 0.15s; }
+  .cat-row-name { flex: 1; font-weight: 600; font-size: 15px; }
+  .cat-row-count { font-size: 12px; color: var(--text-faint); margin-right: 4px; }
+  .cat-edit-btn { background: none; border: 1.5px solid var(--border); border-radius: 6px; color: var(--text-dim); font-size: 12px; padding: 4px 8px; cursor: pointer; }
+  .cat-edit-btn:hover { border-color: var(--amber-dim); color: var(--amber); }
+  .cat-del-btn { background: none; border: none; color: var(--text-faint); font-size: 18px; cursor: pointer; padding: 2px 6px; }
+  .cat-del-btn:hover { color: var(--red); }
+  .cat-add-form { display: flex; gap: 8px; align-items: flex-end; }
+  .cat-add-form > div:first-child { flex: 1; }
+
+  /* ===== DRAG ===== */
+  .drag-handle { color: var(--text-faint); font-size: 20px; padding: 4px 8px; user-select: none; touch-action: none; cursor: grab; }
+  .dragging-ghost { position: fixed; pointer-events: none; z-index: 9999; background: var(--surface); border: 2px solid var(--amber); border-radius: var(--radius-sm); padding: 10px 14px; font-weight: 700; font-size: 14px; color: var(--text); box-shadow: 0 8px 24px rgba(0,0,0,0.5); opacity: 0.95; transform: rotate(1.5deg); }
+
+  /* ===== MODALS ===== */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200; align-items: flex-end; justify-content: center; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius) var(--radius) 0 0; width: 100%; max-width: 700px; max-height: 90vh; display: flex; flex-direction: column; }
+  .modal-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 12px auto 0; }
+  .modal-title { font-size: 17px; font-weight: 700; padding: 14px 18px 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .modal-body { flex: 1; overflow-y: auto; padding: 16px 18px; }
+  .modal-footer { padding: 14px 18px; border-top: 1px solid var(--border); display: flex; gap: 10px; }
+
+  /* ===== ORDER ENTRY ===== */
+  .cat-filter { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .cat-filter-btn { padding: 6px 12px; border-radius: 20px; background: var(--surface2); border: 1.5px solid var(--border); color: var(--text-dim); font-size: 13px; font-weight: 600; cursor: pointer; }
+  .cat-filter-btn.active { background: rgba(168,120,40,0.2); border-color: var(--amber-dim); color: var(--amber); }
+  .menu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .menu-btn { background: var(--surface2); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 12px 10px; cursor: pointer; text-align: center; }
+  .menu-btn:active { transform: scale(0.97); background: rgba(168,120,40,0.2); }
+  .menu-btn-name { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .menu-btn-price { font-size: 12px; color: var(--amber); }
+  .cart-section { background: var(--surface2); border-radius: var(--radius-sm); padding: 12px; }
+  .cart-item { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--border); }
+  .cart-item:last-child { border-bottom: none; }
+  .cart-item-name { flex: 1; font-size: 14px; }
+  .cart-qty-ctrl { display: flex; align-items: center; gap: 8px; }
+  .qty-btn { width: 32px; height: 32px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text); font-size: 18px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .qty-btn:active { background: var(--amber-dim); }
+  .qty-num { min-width: 22px; text-align: center; font-weight: 700; }
+  .cart-item-price { min-width: 58px; text-align: right; font-size: 13px; color: var(--amber); font-weight: 600; }
+
+  /* ===== CHECKOUT ===== */
+  .checkout-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .checkout-row:last-child { border-bottom: none; }
+  .checkout-name { color: var(--text-dim); }
+  .checkout-detail { font-size: 12px; color: var(--text-faint); }
+  .checkout-price { font-weight: 700; }
+  .checkout-total-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 0 0; margin-top: 6px; border-top: 2px solid var(--amber-dim); }
+  .checkout-total-label { font-size: 15px; font-weight: 700; color: var(--text-dim); }
+  .checkout-total-price { font-size: 26px; font-weight: 700; color: var(--amber-glow); }
+  .change-section { background: var(--surface2); border: 1.5px solid var(--border); border-radius: var(--radius); padding: 14px; margin-top: 18px; }
+  .change-section > label { font-size: 12px; color: var(--text-dim); margin-bottom: 10px; display: block; }
+  .quick-bills { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .quick-btn { padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface); border: 1.5px solid var(--border); color: var(--text); font-size: 14px; font-weight: 700; cursor: pointer; flex: 1; min-width: 60px; text-align: center; }
+  .quick-btn:active { background: var(--amber-dim); border-color: var(--amber); }
+  .received-display { background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+  .received-label { font-size: 12px; color: var(--text-dim); }
+  .received-value { font-size: 20px; font-weight: 700; }
+  .received-clear { background: none; border: none; color: var(--text-faint); font-size: 13px; cursor: pointer; padding: 4px 8px; }
+  .change-result { display: flex; justify-content: space-between; align-items: center; background: var(--bg); border-radius: var(--radius-sm); padding: 12px 14px; border: 1.5px solid var(--border); }
+  .change-result-label { font-size: 13px; color: var(--text-dim); font-weight: 700; }
+  .change-result-value { font-size: 28px; font-weight: 700; }
+  .change-result-value.positive { color: var(--green-bright); }
+  .change-result-value.negative { color: var(--red); }
+  .change-result-value.zero { color: var(--text-dim); }
+
+  /* ===== LOG ===== */
+  .log-date-group { margin-bottom: 18px; }
+  .log-date-header { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: var(--amber-dim); padding: 4px 0 8px; border-bottom: 1px solid var(--border); margin-bottom: 10px; display: flex; justify-content: space-between; }
+  .log-card { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 8px; position: relative; transition: border-color 0.15s; }
+  .log-card.selected { border-color: var(--amber); background: rgba(168,120,40,0.1); }
+  .log-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .log-card-name { font-weight: 700; font-size: 15px; }
+  .log-card-time { font-size: 12px; color: var(--text-faint); }
+  .log-card-total { font-weight: 700; color: var(--amber); font-size: 15px; margin-bottom: 4px; }
+  .log-card-items { font-size: 13px; color: var(--text-dim); line-height: 1.8; }
+  .log-card-del { position: absolute; top: 8px; right: 8px; background: none; border: none; color: var(--text-faint); font-size: 17px; cursor: pointer; padding: 3px 6px; }
+  .log-card-del:hover { color: var(--red); }
+  .log-checkbox { width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--border); background: var(--surface); cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; }
+  .log-checkbox.checked { background: var(--amber); border-color: var(--amber); color: #1a1410; font-weight: 900; }
+  .log-select-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 12px; }
+  .log-select-count { font-size: 13px; color: var(--text-dim); flex: 1; }
+
+  /* ===== CONFIRM / EDIT DIALOGS ===== */
+  .confirm-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 300; align-items: center; justify-content: center; padding: 20px; }
+  .confirm-overlay.open { display: flex; }
+  .confirm-box { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); padding: 26px 22px; max-width: 380px; width: 100%; text-align: center; }
+  .confirm-title { font-size: 17px; font-weight: 700; margin-bottom: 10px; }
+  .confirm-msg { font-size: 14px; color: var(--text-dim); margin-bottom: 22px; line-height: 1.6; white-space: pre-line; }
+  .confirm-btns { display: flex; gap: 10px; }
+  .edit-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 300; align-items: center; justify-content: center; padding: 20px; }
+  .edit-modal-overlay.open { display: flex; }
+  .edit-modal-box { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); padding: 22px; max-width: 380px; width: 100%; }
+  .edit-modal-title { font-size: 16px; font-weight: 700; margin-bottom: 14px; }
+
+  /* ===== SETTINGS TAB ===== */
+  .settings-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-bottom: 14px; }
+  .settings-card h3 { font-size: 14px; font-weight: 700; color: var(--amber); margin-bottom: 12px; }
+  .settings-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .settings-row:last-child { border-bottom: none; }
+  .settings-label { color: var(--text-dim); }
+  .settings-val { font-weight: 600; color: var(--text); font-size: 13px; word-break: break-all; max-width: 60%; text-align: right; }
+
+  /* ===== EMPTY / TOAST ===== */
+  .empty-state { text-align: center; padding: 50px 20px; color: var(--text-faint); }
+  .empty-icon { font-size: 44px; margin-bottom: 10px; }
+  .empty-text { font-size: 14px; }
+</style>
+</head>
+<body>
+
+<!-- ===== SETUP SCREEN ===== -->
+<div id="setup-screen">
+  <div class="setup-title">🍺 伝票管理アプリ — 初期設定</div>
+  <p class="setup-sub">Googleスプレッドシートと連携することで<br>iPad・iPhone・MacBook 全てのデバイスでデータが同期されます。</p>
+  <div class="setup-card">
+    <div class="setup-step">
+      <div class="step-num">1</div>
+      <div class="step-text">
+        <a href="https://docs.google.com/spreadsheets/create" target="_blank">Google スプレッドシートを新規作成</a>して開く
+      </div>
+    </div>
+    <div class="setup-step">
+      <div class="step-num">2</div>
+      <div class="step-text">
+        メニューバーの「拡張機能」→「<strong>Apps Script</strong>」を開く
+      </div>
+    </div>
+    <div class="setup-step">
+      <div class="step-num">3</div>
+      <div class="step-text">
+        表示されたエディタに以下のコードを<strong>全て貼り付けて</strong>保存（💾）<br><br>
+        <a href="#" onclick="copyGasCode(); return false;" style="background:var(--amber);color:#1a1410;padding:6px 14px;border-radius:6px;font-weight:700;font-size:13px;display:inline-block;">📋 コードをコピー</a>
+      </div>
+    </div>
+    <div class="setup-step">
+      <div class="step-num">4</div>
+      <div class="step-text">
+        「デプロイ」→「新しいデプロイ」→ 種類は「<strong>ウェブアプリ</strong>」→ アクセスできるユーザーを「<strong>全員</strong>」にして「デプロイ」
+      </div>
+    </div>
+    <div class="setup-step">
+      <div class="step-num">5</div>
+      <div class="step-text">
+        表示された「<strong>ウェブアプリのURL</strong>」をコピーして下に貼り付ける
+      </div>
+    </div>
+  </div>
+  <div class="setup-card" id="url-input-wrap">
+    <label style="font-size:14px;color:var(--text-dim);margin-bottom:10px;display:block;">ウェブアプリのURL</label>
+    <input type="url" id="gas-url-input" placeholder="https://script.google.com/macros/s/..." />
+    <button class="btn btn-amber" style="width:100%;margin-top:10px;" onclick="saveGasUrl()">接続してアプリを起動</button>
+  </div>
+  <p style="font-size:12px;color:var(--text-faint);margin-top:12px;">URLはこのデバイスに保存されます。他のデバイスでも同じURLを設定してください。</p>
+</div>
+
+<!-- ===== MAIN APP ===== -->
+<div id="main-app" style="display:none;">
+  <div id="sync-bar">
+    <div id="sync-dot"></div>
+    <span id="sync-msg">接続中...</span>
+    <span style="flex:1"></span>
+    <button style="background:none;border:none;color:var(--text-faint);font-size:12px;cursor:pointer;" onclick="syncNow()">↻ 更新</button>
+  </div>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('orders')">🍺 注文</button>
+    <button class="tab-btn" onclick="switchTab('menu')">📋 メニュー</button>
+    <button class="tab-btn" onclick="switchTab('category')">🏷 カテゴリ</button>
+    <button class="tab-btn" onclick="switchTab('log')">📒 ログ</button>
+    <button class="tab-btn" onclick="switchTab('settings')">⚙️ 設定</button>
+  </div>
+
+  <!-- 注文タブ -->
+  <div id="tab-orders" class="tab-panel active">
+    <div class="orders-header">
+      <span class="section-title">伝票一覧</span>
+      <button class="btn btn-amber btn-sm" onclick="openNewSlipModal()">＋ 新しい伝票</button>
+    </div>
+    <div id="slip-grid" class="slip-grid"></div>
+  </div>
+
+  <!-- メニュータブ -->
+  <div id="tab-menu" class="tab-panel">
+    <p class="section-title">メニューを追加</p>
+    <div class="menu-form">
+      <div><label>メニュー名</label><input type="text" id="menu-name-input" placeholder="例：生ビール" /></div>
+      <div><label>金額（税込）</label><input type="number" id="menu-price-input" placeholder="500" min="0" /></div>
+      <div><label>カテゴリ</label><select id="menu-cat-input"></select></div>
+      <div><label>&nbsp;</label><button class="btn btn-amber" onclick="addMenuItem()">追加</button></div>
+    </div>
+    <div class="divider"></div>
+    <p class="section-title">登録済みメニュー</p>
+    <div id="menu-list" class="menu-list"></div>
+  </div>
+
+  <!-- カテゴリタブ -->
+  <div id="tab-category" class="tab-panel">
+    <p class="section-title">カテゴリを追加</p>
+    <div class="cat-add-form" style="margin-bottom:22px;">
+      <div><label>カテゴリ名</label><input type="text" id="cat-name-input" placeholder="例：おつまみ" /></div>
+      <div><label>&nbsp;</label><button class="btn btn-amber" onclick="addCategory()">追加</button></div>
+    </div>
+    <div class="divider"></div>
+    <p class="section-title">登録済みカテゴリ <span style="font-weight:400;color:var(--text-faint);">（⠿ を押しながら並び替え）</span></p>
+    <div id="cat-list" class="cat-list"></div>
+  </div>
+
+  <!-- ログタブ -->
+  <div id="tab-log" class="tab-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <span class="section-title">会計済みログ</span>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-outline btn-sm" id="log-select-toggle" onclick="toggleLogSelectMode()">選択削除</button>
+        <button class="btn btn-danger btn-sm" onclick="clearLog()">全削除</button>
+      </div>
+    </div>
+    <div id="log-select-bar" class="log-select-bar" style="display:none;">
+      <span class="log-select-count" id="log-select-count">0件選択中</span>
+      <button class="btn btn-outline btn-sm" onclick="selectAllLogs()">すべて選択</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteSelectedLogs()">選択を削除</button>
+    </div>
+    <div id="log-list"></div>
+  </div>
+
+  <!-- 設定タブ -->
+  <div id="tab-settings" class="tab-panel">
+    <div class="settings-card">
+      <h3>接続設定</h3>
+      <div class="settings-row">
+        <span class="settings-label">接続先URL</span>
+        <span class="settings-val" id="settings-url-display">—</span>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">最終同期</span>
+        <span class="settings-val" id="settings-last-sync">—</span>
+      </div>
+    </div>
+    <button class="btn btn-outline" style="width:100%;margin-bottom:10px;" onclick="syncNow()">↻ 今すぐ同期</button>
+    <button class="btn btn-danger" style="width:100%;" onclick="resetSetup()">接続先URLを変更（再設定）</button>
+  </div>
+</div>
+
+<!-- ===== 注文入力モーダル ===== -->
+<div class="modal-overlay" id="order-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">
+      <span id="order-modal-title">注文を追加</span>
+      <button class="btn btn-sm btn-outline" onclick="closeOrderModal()">閉じる</button>
+    </div>
+    <div class="modal-body">
+      <div class="cat-filter" id="modal-cat-filter"></div>
+      <div id="modal-menu-grid" class="menu-grid"></div>
+      <div class="divider"></div>
+      <p class="section-title">現在の注文</p>
+      <div id="modal-cart" class="cart-section"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-green btn-lg" style="flex:1" onclick="saveOrder()">注文を確定</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 新規伝票モーダル ===== -->
+<div class="modal-overlay" id="new-slip-modal">
+  <div class="modal" style="max-height:50vh">
+    <div class="modal-handle"></div>
+    <div class="modal-title">
+      <span>新しい伝票</span>
+      <button class="btn btn-sm btn-outline" onclick="closeNewSlipModal()">閉じる</button>
+    </div>
+    <div class="modal-body">
+      <label>お客様名 / テーブル番号</label>
+      <input type="text" id="new-slip-name" placeholder="例：田中様、1番テーブル" style="font-size:17px;padding:14px;" />
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-amber btn-lg" style="flex:1" onclick="createSlip()">作成して注文入力へ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 会計モーダル ===== -->
+<div class="modal-overlay" id="checkout-modal">
+  <div class="modal" style="max-height:90vh">
+    <div class="modal-handle"></div>
+    <div class="modal-title">
+      <span>🧾 お会計</span>
+      <button class="btn btn-sm btn-outline" onclick="closeCheckoutModal()">閉じる</button>
+    </div>
+    <div class="modal-body">
+      <p id="checkout-slip-name" style="font-size:18px;font-weight:700;margin-bottom:14px;"></p>
+      <div id="checkout-items"></div>
+      <div class="checkout-total-row">
+        <span class="checkout-total-label">合計（税込）</span>
+        <span id="checkout-total" class="checkout-total-price"></span>
+      </div>
+      <div class="change-section">
+        <label>お預かり金額（ボタンは加算されます）</label>
+        <div class="quick-bills">
+          <button class="quick-btn" onclick="addReceived(100)">＋¥100</button>
+          <button class="quick-btn" onclick="addReceived(500)">＋¥500</button>
+          <button class="quick-btn" onclick="addReceived(1000)">＋¥1,000</button>
+          <button class="quick-btn" onclick="addReceived(5000)">＋¥5,000</button>
+          <button class="quick-btn" onclick="addReceived(10000)">＋¥10,000</button>
+        </div>
+        <div class="received-display">
+          <span class="received-label">お預かり</span>
+          <span id="received-value" class="received-value">¥0</span>
+          <button class="received-clear" onclick="clearReceived()">クリア</button>
+        </div>
+        <div class="change-result">
+          <span class="change-result-label">おつり</span>
+          <span id="change-amount" class="change-result-value zero">——</span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" style="flex:1" onclick="closeCheckoutModal()">戻る</button>
+      <button class="btn btn-danger btn-lg" style="flex:1" onclick="confirmCloseSlip()">会計済みにする</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== カスタム確認ダイアログ ===== -->
+<div class="confirm-overlay" id="confirm-dialog">
+  <div class="confirm-box">
+    <div class="confirm-title" id="confirm-title"></div>
+    <div class="confirm-msg" id="confirm-msg"></div>
+    <div class="confirm-btns">
+      <button class="btn btn-outline" style="flex:1" onclick="confirmCancel()">キャンセル</button>
+      <button class="btn btn-danger btn-lg" style="flex:1" id="confirm-ok-btn">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== カテゴリ編集モーダル ===== -->
+<div class="edit-modal-overlay" id="cat-edit-modal">
+  <div class="edit-modal-box">
+    <div class="edit-modal-title">カテゴリ名を変更</div>
+    <label>新しいカテゴリ名</label>
+    <input type="text" id="cat-edit-input" style="margin-bottom:16px;" />
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-outline" style="flex:1" onclick="closeCatEditModal()">キャンセル</button>
+      <button class="btn btn-amber" style="flex:1" onclick="saveCatEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== メニュー編集モーダル ===== -->
+<div class="edit-modal-overlay" id="menu-edit-modal">
+  <div class="edit-modal-box">
+    <div class="edit-modal-title">メニューを編集</div>
+    <label>メニュー名</label>
+    <input type="text" id="menu-edit-name" style="margin-bottom:12px;" />
+    <label>金額（税込）</label>
+    <input type="number" id="menu-edit-price" min="0" style="margin-bottom:12px;" />
+    <label>カテゴリ</label>
+    <select id="menu-edit-cat" style="margin-bottom:18px;"></select>
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-outline" style="flex:1" onclick="closeMenuEditModal()">キャンセル</button>
+      <button class="btn btn-amber" style="flex:1" onclick="saveMenuEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== GAS CODE FOR COPY =====
+const GAS_CODE = `
+const SHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
+
+function doGet(e) {
+  const action = e.parameter.action;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  try {
+    if (action === 'load') {
+      const data = {
+        categories: getSheet(ss,'categories').getDataRange().getValues().flat().filter(Boolean),
+        menus: sheetToObjects(getSheet(ss,'menus')),
+        slips: sheetToObjects(getSheet(ss,'slips')).map(s=>({...s,orders:JSON.parse(s.orders||'[]')})),
+        logs:  sheetToObjects(getSheet(ss,'logs')).map(l=>({...l,orders:JSON.parse(l.orders||'[]')}))
+      };
+      return json(data);
+    }
+  } catch(err) { return json({error:err.message}); }
+}
+
+function doPost(e) {
+  const body = JSON.parse(e.postData.contents);
+  const action = body.action;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  try {
+    if (action === 'saveAll') {
+      saveCategories(ss, body.categories);
+      saveMenus(ss, body.menus);
+      saveSlips(ss, body.slips);
+      saveLogs(ss, body.logs);
+      return json({ok:true});
+    }
+  } catch(err) { return json({error:err.message}); }
+}
+
+function getSheet(ss, name) {
+  let sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  return sh;
+}
+
+function sheetToObjects(sh) {
+  const vals = sh.getDataRange().getValues();
+  if (vals.length < 2) return [];
+  const headers = vals[0];
+  return vals.slice(1).map(row => {
+    const obj = {};
+    headers.forEach((h,i) => obj[h] = row[i]);
+    return obj;
+  });
+}
+
+function saveCategories(ss, cats) {
+  const sh = getSheet(ss,'categories');
+  sh.clearContents();
+  if (cats.length) sh.getRange(1,1,cats.length,1).setValues(cats.map(c=>[c]));
+}
+
+function saveMenus(ss, menus) {
+  const sh = getSheet(ss,'menus');
+  sh.clearContents();
+  if (!menus.length) return;
+  const headers = ['id','name','price','cat'];
+  sh.getRange(1,1,1,headers.length).setValues([headers]);
+  sh.getRange(2,1,menus.length,headers.length).setValues(menus.map(m=>headers.map(h=>m[h]??'')));
+}
+
+function saveSlips(ss, slips) {
+  const sh = getSheet(ss,'slips');
+  sh.clearContents();
+  if (!slips.length) return;
+  const headers = ['id','name','orders','createdAt'];
+  sh.getRange(1,1,1,headers.length).setValues([headers]);
+  sh.getRange(2,1,slips.length,headers.length).setValues(slips.map(s=>[s.id,s.name,JSON.stringify(s.orders),s.createdAt]));
+}
+
+function saveLogs(ss, logs) {
+  const sh = getSheet(ss,'logs');
+  sh.clearContents();
+  if (!logs.length) return;
+  const headers = ['id','name','orders','total','closedAt','dateLabel','timeLabel'];
+  sh.getRange(1,1,1,headers.length).setValues([headers]);
+  sh.getRange(2,1,logs.length,headers.length).setValues(logs.map(l=>headers.map(h=>l[h]??'')));
+}
+
+function json(data) {
+  return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
+}
+`.trim();
+
+// ===== STORAGE =====
+const Store = {
+  _d: {},
+  get(k, fb) { try { const v = localStorage.getItem(k); return v !== null ? JSON.parse(v) : fb; } catch(e) { return this._d[k] !== undefined ? this._d[k] : fb; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {} this._d[k] = v; },
+  del(k)    { try { localStorage.removeItem(k); } catch(e) {} delete this._d[k]; }
+};
+
+// ===== STATE =====
+let GAS_URL = Store.get('izakaya-gas-url', '');
+let categories   = [];
+let menus        = [];
+let slips        = [];
+let logs         = [];
+
+let currentSlipId    = null;
+let currentCart      = {};
+let modalCatFilter   = 'すべて';
+let receivedAmount   = 0;
+let checkoutSlipId   = null;
+let editingCatOldName = null;
+let editingMenuId    = null;
+let logSelectMode    = false;
+let selectedLogIds   = new Set();
+let lastSyncTime     = null;
+let isSaving         = false;
+
+function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+// ===== SETUP =====
+function copyGasCode() {
+  navigator.clipboard.writeText(GAS_CODE).then(() => showToast('コードをコピーしました')).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = GAS_CODE; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    showToast('コードをコピーしました');
+  });
+}
+function saveGasUrl() {
+  const url = document.getElementById('gas-url-input').value.trim();
+  if (!url.startsWith('https://script.google.com')) { showToast('正しいURLを入力してください'); return; }
+  GAS_URL = url;
+  Store.set('izakaya-gas-url', url);
+  launchApp();
+}
+function resetSetup() {
+  showConfirm('接続先を変更', '現在の接続先URLを削除して再設定画面に戻りますか？\nアプリ内のデータはGoogleスプレッドシートに残ります。', () => {
+    Store.del('izakaya-gas-url');
+    GAS_URL = '';
+    document.getElementById('main-app').style.display = 'none';
+    document.getElementById('setup-screen').style.display = 'flex';
+    document.getElementById('gas-url-input').value = '';
+  });
+}
+
+function launchApp() {
+  document.getElementById('setup-screen').style.display = 'none';
+  document.getElementById('main-app').style.display = 'block';
+  document.getElementById('settings-url-display').textContent = GAS_URL.slice(0, 40) + '...';
+  setSyncStatus('syncing', '同期中...');
+  loadFromGAS();
+}
+
+// ===== SYNC =====
+function setSyncStatus(state, msg) {
+  const dot = document.getElementById('sync-dot');
+  dot.className = 'ok error syncing'.split(' ').reduce((s, c) => s.replace(c, ''), dot.className).trim();
+  dot.classList.add(state);
+  document.getElementById('sync-msg').textContent = msg;
+}
+
+async function loadFromGAS() {
+  setSyncStatus('syncing', '同期中...');
+  try {
+    const res = await fetch(GAS_URL + '?action=load');
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    categories = data.categories || [];
+    menus      = data.menus      || [];
+    slips      = data.slips      || [];
+    logs       = data.logs       || [];
+    if (categories.length === 0) {
+      categories = ['ドリンク', 'フード', 'その他'];
+    }
+    if (menus.length === 0) {
+      menus = [
+        {id:'m1',name:'生ビール',    price:600, cat:'ドリンク'},
+        {id:'m2',name:'ハイボール',  price:550, cat:'ドリンク'},
+        {id:'m3',name:'レモンサワー',price:550, cat:'ドリンク'},
+        {id:'m4',name:'ウーロン茶',  price:400, cat:'ドリンク'},
+        {id:'m5',name:'枝豆',        price:380, cat:'フード'},
+        {id:'m6',name:'唐揚げ',      price:650, cat:'フード'},
+        {id:'m7',name:'ポテトフライ',price:500, cat:'フード'},
+      ];
+    }
+    lastSyncTime = new Date();
+    setSyncStatus('ok', '同期済み ' + fmtTime(lastSyncTime));
+    document.getElementById('settings-last-sync').textContent = fmtTime(lastSyncTime);
+    renderAll();
+    await saveToGAS();
+  } catch(e) {
+    setSyncStatus('error', '同期エラー: ' + e.message);
+  }
+}
+
+async function saveToGAS() {
+  if (!GAS_URL || isSaving) return;
+  isSaving = true;
+  setSyncStatus('syncing', '保存中...');
+  try {
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'saveAll', categories, menus, slips, logs })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    lastSyncTime = new Date();
+    setSyncStatus('ok', '保存済み ' + fmtTime(lastSyncTime));
+    document.getElementById('settings-last-sync').textContent = fmtTime(lastSyncTime);
+  } catch(e) {
+    setSyncStatus('error', '保存エラー: ' + e.message);
+  } finally { isSaving = false; }
+}
+
+function syncNow() { loadFromGAS(); }
+function fmtTime(d) { return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0'); }
+
+// ===== RENDER ALL =====
+function renderAll() {
+  renderMenuCatSelect();
+  renderSlips();
+  renderMenuList();
+  renderCatList();
+  renderLog();
+}
+
+// ===== TABS =====
+function switchTab(tab) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`).classList.add('active');
+}
+
+// ===== CATEGORY =====
+function renderCatList() {
+  const el = document.getElementById('cat-list');
+  if (!categories.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">🏷</div><div class="empty-text">カテゴリがありません</div></div>'; return; }
+  el.innerHTML = categories.map((cat, idx) => {
+    const count = menus.filter(m => m.cat === cat).length;
+    return `<div class="cat-row" data-idx="${idx}">
+      <span class="drag-handle" data-handle="true">⠿</span>
+      <span class="cat-row-name">${cat}</span>
+      <span class="cat-row-count">${count}品</span>
+      <button class="cat-edit-btn" onclick="openCatEditModal('${cat}')">名称変更</button>
+      <button class="cat-del-btn" onclick="deleteCategory('${cat}')">✕</button>
+    </div>`;
+  }).join('');
+  initCatDrag();
+}
+
+function addCategory() {
+  const name = document.getElementById('cat-name-input').value.trim();
+  if (!name) { showToast('カテゴリ名を入力してください'); return; }
+  if (categories.includes(name)) { showToast('同じ名前のカテゴリが既にあります'); return; }
+  categories.push(name);
+  document.getElementById('cat-name-input').value = '';
+  renderCatList(); renderMenuCatSelect();
+  saveToGAS();
+}
+function deleteCategory(cat) {
+  const count = menus.filter(m => m.cat === cat).length;
+  const msg = count > 0 ? `「${cat}」を削除します。${count}品は「その他」に移動されます。` : `「${cat}」を削除しますか？`;
+  showConfirm('カテゴリを削除', msg, () => {
+    menus = menus.map(m => m.cat === cat ? {...m, cat:'その他'} : m);
+    categories = categories.filter(c => c !== cat);
+    if (!categories.includes('その他') && menus.some(m => m.cat === 'その他')) categories.push('その他');
+    renderCatList(); renderMenuCatSelect(); renderMenuList();
+    saveToGAS();
+  });
+}
+function openCatEditModal(cat) {
+  editingCatOldName = cat;
+  document.getElementById('cat-edit-input').value = cat;
+  document.getElementById('cat-edit-modal').classList.add('open');
+  setTimeout(() => document.getElementById('cat-edit-input').focus(), 100);
+}
+function closeCatEditModal() { document.getElementById('cat-edit-modal').classList.remove('open'); editingCatOldName = null; }
+function saveCatEdit() {
+  const newName = document.getElementById('cat-edit-input').value.trim();
+  if (!newName) { showToast('カテゴリ名を入力してください'); return; }
+  if (newName !== editingCatOldName && categories.includes(newName)) { showToast('同じ名前が既にあります'); return; }
+  categories = categories.map(c => c === editingCatOldName ? newName : c);
+  menus = menus.map(m => m.cat === editingCatOldName ? {...m, cat: newName} : m);
+  closeCatEditModal();
+  renderCatList(); renderMenuCatSelect(); renderMenuList();
+  saveToGAS(); showToast(`「${newName}」に変更しました`);
+}
+
+// カテゴリ タッチ対応ドラッグ
+function initCatDrag() {
+  const list = document.getElementById('cat-list');
+  let ghost = null, dragSrcIdx = null, lastOverIdx = null;
+  list.querySelectorAll('.drag-handle').forEach(handle => {
+    handle.addEventListener('touchstart', onTouchStart, { passive: false });
+    handle.addEventListener('mousedown', onMouseDown);
+  });
+  function getRows() { return Array.from(list.querySelectorAll('.cat-row')); }
+  function createGhost(row, x, y) {
+    ghost = document.createElement('div');
+    ghost.className = 'dragging-ghost';
+    ghost.textContent = row.querySelector('.cat-row-name').textContent;
+    ghost.style.left = (x - 40) + 'px'; ghost.style.top = (y - 24) + 'px';
+    document.body.appendChild(ghost);
+    row.style.opacity = '0.4';
+  }
+  function moveGhost(x, y) { if (ghost) { ghost.style.left = (x-40)+'px'; ghost.style.top = (y-24)+'px'; } }
+  function getIdxAt(y) {
+    const rows = getRows();
+    for (let i = 0; i < rows.length; i++) { const r = rows[i].getBoundingClientRect(); if (y < r.top + r.height / 2) return i; }
+    return rows.length - 1;
+  }
+  function highlightOver(idx) { getRows().forEach((r,i) => r.style.borderTopColor = (i===idx && idx!==dragSrcIdx) ? 'var(--amber)' : ''); }
+  function finish(dropIdx) {
+    if (ghost) { ghost.remove(); ghost = null; }
+    getRows().forEach(r => { r.style.opacity=''; r.style.borderTopColor=''; });
+    if (dragSrcIdx !== null && dropIdx !== null && dragSrcIdx !== dropIdx) {
+      const moved = categories.splice(dragSrcIdx, 1)[0];
+      categories.splice(dropIdx, 0, moved);
+      renderCatList(); renderMenuCatSelect();
+      saveToGAS();
+    }
+    dragSrcIdx = null; lastOverIdx = null;
+  }
+  function onTouchStart(e) {
+    e.preventDefault();
+    const row = e.currentTarget.closest('.cat-row');
+    dragSrcIdx = parseInt(row.dataset.idx);
+    const t = e.touches[0];
+    createGhost(row, t.clientX, t.clientY);
+    document.addEventListener('touchmove', onTouchMove, {passive:false});
+    document.addEventListener('touchend', onTouchEnd);
+  }
+  function onTouchMove(e) { e.preventDefault(); const t=e.touches[0]; moveGhost(t.clientX,t.clientY); const idx=getIdxAt(t.clientY); if(idx!==lastOverIdx){highlightOver(idx);lastOverIdx=idx;} }
+  function onTouchEnd(e) { document.removeEventListener('touchmove',onTouchMove); document.removeEventListener('touchend',onTouchEnd); finish(getIdxAt(e.changedTouches[0].clientY)); }
+  function onMouseDown(e) { const row=e.currentTarget.closest('.cat-row'); dragSrcIdx=parseInt(row.dataset.idx); createGhost(row,e.clientX,e.clientY); document.addEventListener('mousemove',onMouseMove); document.addEventListener('mouseup',onMouseUp); }
+  function onMouseMove(e) { moveGhost(e.clientX,e.clientY); const idx=getIdxAt(e.clientY); if(idx!==lastOverIdx){highlightOver(idx);lastOverIdx=idx;} }
+  function onMouseUp(e) { document.removeEventListener('mousemove',onMouseMove); document.removeEventListener('mouseup',onMouseUp); finish(getIdxAt(e.clientY)); }
+}
+
+// ===== MENU =====
+function renderMenuCatSelect() {
+  ['menu-cat-input','menu-edit-cat'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = categories.map(c => `<option value="${c}">${c}</option>`).join('');
+  });
+}
+function addMenuItem() {
+  const name = document.getElementById('menu-name-input').value.trim();
+  const price = parseInt(document.getElementById('menu-price-input').value);
+  const cat = document.getElementById('menu-cat-input').value;
+  if (!name) { showToast('メニュー名を入力してください'); return; }
+  if (isNaN(price)||price<0) { showToast('正しい金額を入力してください'); return; }
+  menus.push({id:genId(), name, price, cat});
+  document.getElementById('menu-name-input').value = '';
+  document.getElementById('menu-price-input').value = '';
+  renderMenuList(); saveToGAS();
+}
+function deleteMenuItem(id) {
+  showConfirm('メニューを削除', 'このメニューを削除しますか？', () => {
+    menus = menus.filter(m => m.id !== id);
+    renderMenuList(); saveToGAS();
+  });
+}
+function renderMenuList() {
+  const el = document.getElementById('menu-list');
+  if (!menus.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">📝</div><div class="empty-text">メニューがまだありません</div></div>'; return; }
+  let html = '';
+  categories.forEach(cat => {
+    const items = menus.filter(m => m.cat === cat);
+    if (!items.length) return;
+    html += `<div style="margin-bottom:6px;padding:5px 8px;font-size:11px;font-weight:700;color:var(--amber-dim);letter-spacing:0.08em;">${cat}</div>`;
+    items.forEach(m => {
+      html += `<div class="menu-item">
+        <span class="menu-item-name">${m.name}</span>
+        <span class="menu-item-price">¥${Number(m.price).toLocaleString()}</span>
+        <button class="menu-item-edit" onclick="openMenuEditModal('${m.id}')">編集</button>
+        <button class="menu-item-del" onclick="deleteMenuItem('${m.id}')">✕</button>
+      </div>`;
+    });
+  });
+  el.innerHTML = html || '<div class="empty-state"><div class="empty-text">メニューなし</div></div>';
+}
+function openMenuEditModal(id) {
+  const m = menus.find(m => m.id === id);
+  if (!m) return;
+  editingMenuId = id;
+  document.getElementById('menu-edit-name').value = m.name;
+  document.getElementById('menu-edit-price').value = m.price;
+  const sel = document.getElementById('menu-edit-cat');
+  sel.innerHTML = categories.map(c => `<option value="${c}" ${c===m.cat?'selected':''}>${c}</option>`).join('');
+  document.getElementById('menu-edit-modal').classList.add('open');
+  setTimeout(() => document.getElementById('menu-edit-name').focus(), 100);
+}
+function closeMenuEditModal() { document.getElementById('menu-edit-modal').classList.remove('open'); editingMenuId = null; }
+function saveMenuEdit() {
+  const name = document.getElementById('menu-edit-name').value.trim();
+  const price = parseInt(document.getElementById('menu-edit-price').value);
+  const cat = document.getElementById('menu-edit-cat').value;
+  if (!name) { showToast('メニュー名を入力してください'); return; }
+  if (isNaN(price)||price<0) { showToast('正しい金額を入力してください'); return; }
+  menus = menus.map(m => m.id===editingMenuId ? {...m, name, price, cat} : m);
+  closeMenuEditModal(); renderMenuList(); saveToGAS(); showToast('メニューを更新しました');
+}
+
+// ===== SLIPS =====
+function calcTotal(slip) { return slip.orders.reduce((s,o) => s + Number(o.price)*Number(o.qty), 0); }
+function renderSlips() {
+  const grid = document.getElementById('slip-grid');
+  if (!slips.length) { grid.innerHTML = '<div class="empty-state"><div class="empty-icon">🍺</div><div class="empty-text">伝票がありません<br>「新しい伝票」から追加してください</div></div>'; return; }
+  grid.innerHTML = slips.map(slip => {
+    const total = calcTotal(slip);
+    const itemRows = slip.orders.map(o => `<div class="slip-item-row"><span class="slip-item-name">${o.name}</span><span class="slip-item-qty">×${o.qty}</span><span class="slip-item-price">¥${(Number(o.price)*Number(o.qty)).toLocaleString()}</span></div>`).join('');
+    return `<div class="slip-card">
+      <div class="slip-header"><span class="slip-name">${slip.name}</span><span class="slip-total">¥${total.toLocaleString()}</span></div>
+      <div class="slip-items">${itemRows || '<div style="color:var(--text-faint);font-size:13px;padding:6px 0;">注文なし</div>'}</div>
+      <div class="slip-footer">
+        <button class="btn btn-amber btn-sm" style="flex:1" onclick="openOrderModal('${slip.id}')">＋ 注文追加</button>
+        <button class="btn btn-green btn-sm" style="flex:1" onclick="openCheckoutModal('${slip.id}')">会計</button>
+        <button class="btn btn-outline btn-sm" onclick="deleteSlipConfirm('${slip.id}')">削除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function openNewSlipModal() { document.getElementById('new-slip-name').value = ''; document.getElementById('new-slip-modal').classList.add('open'); setTimeout(()=>document.getElementById('new-slip-name').focus(),100); }
+function closeNewSlipModal() { document.getElementById('new-slip-modal').classList.remove('open'); }
+function createSlip() {
+  const name = document.getElementById('new-slip-name').value.trim();
+  if (!name) { showToast('お客様名またはテーブル番号を入力してください'); return; }
+  const slip = {id:genId(), name, orders:[], createdAt:Date.now()};
+  slips.push(slip); closeNewSlipModal(); renderSlips();
+  saveToGAS(); openOrderModal(slip.id);
+}
+function deleteSlipConfirm(id) {
+  const slip = slips.find(s=>s.id===id);
+  showConfirm('伝票を削除', `「${slip.name}」の伝票を削除しますか？`, () => {
+    slips = slips.filter(s=>s.id!==id); renderSlips(); saveToGAS();
+  });
+}
+
+// ===== ORDER MODAL =====
+function openOrderModal(slipId) {
+  currentSlipId = slipId;
+  const slip = slips.find(s=>s.id===slipId);
+  currentCart = {};
+  slip.orders.forEach(o => { currentCart[o.menuId] = Number(o.qty); });
+  document.getElementById('order-modal-title').textContent = `${slip.name} の注文`;
+  modalCatFilter = 'すべて';
+  renderModalCatFilter(); renderModalMenuGrid(); renderModalCart();
+  document.getElementById('order-modal').classList.add('open');
+}
+function closeOrderModal() { document.getElementById('order-modal').classList.remove('open'); currentCart={}; currentSlipId=null; }
+function renderModalCatFilter() {
+  const cats = ['すべて', ...categories];
+  document.getElementById('modal-cat-filter').innerHTML = cats.map(c =>
+    `<button class="cat-filter-btn ${c===modalCatFilter?'active':''}" onclick="setModalCat('${c}')">${c}</button>`
+  ).join('');
+}
+function setModalCat(cat) { modalCatFilter=cat; renderModalCatFilter(); renderModalMenuGrid(); }
+function renderModalMenuGrid() {
+  const filtered = modalCatFilter==='すべて' ? menus : menus.filter(m=>m.cat===modalCatFilter);
+  document.getElementById('modal-menu-grid').innerHTML = filtered.length
+    ? filtered.map(m=>`<button class="menu-btn" onclick="addToCart('${m.id}')"><div class="menu-btn-name">${m.name}</div><div class="menu-btn-price">¥${Number(m.price).toLocaleString()}</div></button>`).join('')
+    : '<div class="empty-state" style="padding:20px"><div class="empty-text">メニューがありません</div></div>';
+}
+function addToCart(mid) { currentCart[mid]=(currentCart[mid]||0)+1; renderModalCart(); }
+function setCartQty(mid, qty) { if(qty<=0){delete currentCart[mid];}else{currentCart[mid]=qty;} renderModalCart(); }
+function renderModalCart() {
+  const entries = Object.entries(currentCart).filter(([,q])=>q>0);
+  if (!entries.length) { document.getElementById('modal-cart').innerHTML='<div style="color:var(--text-faint);font-size:14px;padding:8px 0;">まだ何も選んでいません</div>'; return; }
+  let total=0, html='';
+  entries.forEach(([mid,qty]) => {
+    const m=menus.find(m=>m.id===mid); if(!m) return;
+    const lt=Number(m.price)*qty; total+=lt;
+    html+=`<div class="cart-item"><span class="cart-item-name">${m.name}</span><div class="cart-qty-ctrl"><button class="qty-btn" onclick="setCartQty('${mid}',${qty-1})">－</button><span class="qty-num">${qty}</span><button class="qty-btn" onclick="setCartQty('${mid}',${qty+1})">＋</button></div><span class="cart-item-price">¥${lt.toLocaleString()}</span></div>`;
+  });
+  html+=`<div style="text-align:right;padding:8px 0 2px;font-weight:700;color:var(--amber);font-size:15px;">小計 ¥${total.toLocaleString()}</div>`;
+  document.getElementById('modal-cart').innerHTML=html;
+}
+function saveOrder() {
+  const slip=slips.find(s=>s.id===currentSlipId); if(!slip) return;
+  slip.orders=Object.entries(currentCart).filter(([,q])=>q>0).map(([mid,qty])=>{const m=menus.find(m=>m.id===mid);return{menuId:mid,name:m.name,price:m.price,qty};});
+  closeOrderModal(); renderSlips(); saveToGAS(); showToast('注文を確定しました');
+}
+
+// ===== CHECKOUT =====
+function openCheckoutModal(slipId) {
+  checkoutSlipId=slipId;
+  const slip=slips.find(s=>s.id===slipId);
+  document.getElementById('checkout-slip-name').textContent=slip.name;
+  const total=calcTotal(slip);
+  document.getElementById('checkout-items').innerHTML=slip.orders.length
+    ? slip.orders.map(o=>`<div class="checkout-row"><div><div class="checkout-name">${o.name}</div><div class="checkout-detail">¥${Number(o.price).toLocaleString()} × ${o.qty}</div></div><div class="checkout-price">¥${(Number(o.price)*Number(o.qty)).toLocaleString()}</div></div>`).join('')
+    : '<div style="color:var(--text-faint);padding:12px 0">注文がありません</div>';
+  document.getElementById('checkout-total').textContent=`¥${total.toLocaleString()}`;
+  clearReceived();
+  document.getElementById('checkout-modal').classList.add('open');
+}
+function closeCheckoutModal() { document.getElementById('checkout-modal').classList.remove('open'); checkoutSlipId=null; clearReceived(); }
+function addReceived(amt) { receivedAmount+=amt; updateReceivedDisplay(); }
+function clearReceived() { receivedAmount=0; document.getElementById('received-value').textContent='¥0'; document.getElementById('change-amount').textContent='——'; document.getElementById('change-amount').className='change-result-value zero'; }
+function updateReceivedDisplay() {
+  document.getElementById('received-value').textContent=`¥${receivedAmount.toLocaleString()}`;
+  const slip=slips.find(s=>s.id===checkoutSlipId); if(!slip) return;
+  const change=receivedAmount-calcTotal(slip);
+  const el=document.getElementById('change-amount');
+  if(receivedAmount===0){el.textContent='——';el.className='change-result-value zero';return;}
+  el.textContent=(change>=0?'¥':'－¥')+Math.abs(change).toLocaleString();
+  el.className='change-result-value '+(change>0?'positive':change===0?'zero':'negative');
+}
+function confirmCloseSlip() {
+  const slip=slips.find(s=>s.id===checkoutSlipId); if(!slip) return;
+  const total=calcTotal(slip);
+  showConfirm('会計を完了しますか？', `${slip.name}\n合計 ¥${total.toLocaleString()}`, () => {
+    const now=new Date();
+    logs.unshift({id:genId(),name:slip.name,orders:slip.orders,total,closedAt:now.toISOString(),
+      dateLabel:`${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日`,
+      timeLabel:String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0')});
+    slips=slips.filter(s=>s.id!==checkoutSlipId);
+    closeCheckoutModal(); renderSlips(); renderLog(); saveToGAS(); showToast('会計を完了しました');
+  });
+}
+
+// ===== LOG =====
+function renderLog() {
+  const el=document.getElementById('log-list');
+  if(!logs.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">📒</div><div class="empty-text">まだ会計ログがありません</div></div>';return;}
+  const groups={};
+  logs.forEach(l=>{if(!groups[l.dateLabel])groups[l.dateLabel]=[];groups[l.dateLabel].push(l);});
+  el.innerHTML=Object.entries(groups).map(([date,entries])=>{
+    const dayTotal=entries.reduce((s,l)=>s+Number(l.total),0);
+    const cards=entries.map(log=>{
+      const isSel=selectedLogIds.has(log.id);
+      const items=log.orders.map(o=>`${o.name} ×${o.qty}　¥${(Number(o.price)*Number(o.qty)).toLocaleString()}`).join('<br>');
+      const ctrl=logSelectMode
+        ?`<div class="log-checkbox ${isSel?'checked':''}" onclick="toggleLogSelect('${log.id}')">${isSel?'✓':''}</div>`
+        :`<button class="log-card-del" onclick="deleteOneLog('${log.id}')">✕</button>`;
+      return `<div class="log-card ${isSel?'selected':''}" data-id="${log.id}">${ctrl}
+        <div class="log-card-header"><span class="log-card-name">${log.name}</span><span class="log-card-time">${log.timeLabel}</span></div>
+        <div class="log-card-total">¥${Number(log.total).toLocaleString()}</div>
+        <div class="log-card-items">${items||'（注文なし）'}</div>
+      </div>`;
+    }).join('');
+    return `<div class="log-date-group"><div class="log-date-header"><span>${date}　${entries.length}件</span><span style="color:var(--amber);font-weight:700;">合計 ¥${dayTotal.toLocaleString()}</span></div>${cards}</div>`;
+  }).join('');
+}
+function toggleLogSelectMode() {
+  logSelectMode=!logSelectMode; selectedLogIds.clear();
+  document.getElementById('log-select-toggle').textContent=logSelectMode?'キャンセル':'選択削除';
+  document.getElementById('log-select-toggle').className=logSelectMode?'btn btn-amber btn-sm':'btn btn-outline btn-sm';
+  document.getElementById('log-select-bar').style.display=logSelectMode?'flex':'none';
+  renderLog();
+}
+function updateSelectCount() { document.getElementById('log-select-count').textContent=`${selectedLogIds.size}件選択中`; }
+function toggleLogSelect(id) {
+  if(selectedLogIds.has(id))selectedLogIds.delete(id);else selectedLogIds.add(id);
+  updateSelectCount(); renderLog();
+}
+function selectAllLogs() {
+  const all=logs.map(l=>l.id);
+  if(all.every(id=>selectedLogIds.has(id)))selectedLogIds.clear();else all.forEach(id=>selectedLogIds.add(id));
+  updateSelectCount(); renderLog();
+}
+function deleteSelectedLogs() {
+  if(!selectedLogIds.size){showToast('削除するログを選択してください');return;}
+  showConfirm('選択したログを削除',`${selectedLogIds.size}件のログを削除しますか？`,()=>{
+    logs=logs.filter(l=>!selectedLogIds.has(l.id)); selectedLogIds.clear();
+    if(!logs.length){logSelectMode=false;document.getElementById('log-select-toggle').textContent='選択削除';document.getElementById('log-select-toggle').className='btn btn-outline btn-sm';document.getElementById('log-select-bar').style.display='none';}
+    renderLog(); saveToGAS(); showToast('削除しました');
+  });
+}
+function deleteOneLog(id) {
+  showConfirm('ログを削除','このログを削除しますか？',()=>{
+    logs=logs.filter(l=>l.id!==id); renderLog(); saveToGAS(); showToast('削除しました');
+  });
+}
+function clearLog() {
+  if(!logs.length){showToast('ログがありません');return;}
+  showConfirm('ログを全削除','すべての会計ログを削除しますか？',()=>{
+    logs=[]; selectedLogIds.clear(); logSelectMode=false;
+    document.getElementById('log-select-toggle').textContent='選択削除';
+    document.getElementById('log-select-toggle').className='btn btn-outline btn-sm';
+    document.getElementById('log-select-bar').style.display='none';
+    renderLog(); saveToGAS(); showToast('ログを全削除しました');
+  });
+}
+
+// ===== CONFIRM =====
+let confirmCallback=null;
+function showConfirm(title,msg,onOk) {
+  document.getElementById('confirm-title').textContent=title;
+  document.getElementById('confirm-msg').textContent=msg;
+  confirmCallback=onOk;
+  document.getElementById('confirm-dialog').classList.add('open');
+}
+function confirmCancel() { document.getElementById('confirm-dialog').classList.remove('open'); confirmCallback=null; }
+document.getElementById('confirm-ok-btn').addEventListener('click',()=>{
+  document.getElementById('confirm-dialog').classList.remove('open');
+  if(confirmCallback){confirmCallback();confirmCallback=null;}
+});
+
+// ===== TOAST =====
+function showToast(msg) {
+  const t=document.createElement('div');
+  t.textContent=msg;
+  t.style.cssText='position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:rgba(40,34,20,0.95);border:1.5px solid var(--amber-dim);color:var(--amber-glow);padding:10px 22px;border-radius:30px;font-size:14px;font-weight:700;z-index:9999;pointer-events:none;animation:fadeInOut 2.2s ease forwards;';
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(),2200);
+}
+const _style=document.createElement('style');
+_style.textContent='@keyframes fadeInOut{0%{opacity:0;transform:translateX(-50%) translateY(10px)}15%{opacity:1;transform:translateX(-50%) translateY(0)}80%{opacity:1}100%{opacity:0}}';
+document.head.appendChild(_style);
+
+// ===== MODAL CLOSE =====
+['order-modal','new-slip-modal','checkout-modal'].forEach(id=>{
+  document.getElementById(id).addEventListener('click',e=>{if(e.target===e.currentTarget)document.getElementById(id).classList.remove('open');});
+});
+['cat-edit-modal','menu-edit-modal'].forEach(id=>{
+  document.getElementById(id).addEventListener('click',e=>{if(e.target===e.currentTarget)document.getElementById(id).classList.remove('open');});
+});
+document.getElementById('new-slip-name').addEventListener('keydown',e=>{if(e.key==='Enter')createSlip();});
+document.getElementById('cat-name-input').addEventListener('keydown',e=>{if(e.key==='Enter')addCategory();});
+document.getElementById('cat-edit-input').addEventListener('keydown',e=>{if(e.key==='Enter')saveCatEdit();});
+document.getElementById('menu-edit-name').addEventListener('keydown',e=>{if(e.key==='Enter')saveMenuEdit();});
+
+// ===== INIT =====
+if (GAS_URL) { launchApp(); }
+</script>
+</body>
+</html>
