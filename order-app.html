@@ -100,10 +100,15 @@
   .slip-name { font-weight: 700; font-size: 16px; }
   .slip-total { font-weight: 700; color: var(--amber); font-size: 15px; }
   .slip-items { padding: 10px 14px; }
-  .slip-item-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-dim); padding: 3px 0; border-bottom: 1px dashed var(--text-faint); }
+  .slip-order-group { margin-bottom: 10px; }
+  .slip-order-time { font-size: 11px; font-weight: 700; color: var(--amber-dim); letter-spacing: 0.05em; padding: 4px 0 4px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+  .slip-item-row { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); padding: 4px 0; border-bottom: 1px dashed var(--text-faint); }
   .slip-item-row:last-child { border-bottom: none; }
+  .slip-item-row.served { opacity: 0.4; text-decoration: line-through; }
+  .slip-item-check { width: 20px; height: 20px; border-radius: 5px; border: 1.5px solid var(--border); background: var(--surface); cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 900; transition: all 0.15s; }
+  .slip-item-check.checked { background: var(--green); border-color: var(--green); color: white; }
   .slip-item-name { flex: 1; }
-  .slip-item-qty { color: var(--amber-dim); margin: 0 6px; }
+  .slip-item-qty { color: var(--amber-dim); margin: 0 4px; }
   .slip-item-price { font-weight: 600; color: var(--text); }
   .slip-footer { padding: 10px 14px; display: flex; gap: 8px; border-top: 1px solid var(--border); }
 
@@ -518,7 +523,7 @@ function doGet(e) {
       const data = {
         categories: getSheet(ss,'categories').getDataRange().getValues().flat().filter(Boolean),
         menus: sheetToObjects(getSheet(ss,'menus')),
-        slips: sheetToObjects(getSheet(ss,'slips')).map(s=>({...s,orders:JSON.parse(s.orders||'[]')})),
+        slips: sheetToObjects(getSheet(ss,'slips')).map(s=>({...s,orderGroups:JSON.parse(s.orders||'[]')})),
         logs:  sheetToObjects(getSheet(ss,'logs')).map(l=>({...l,orders:JSON.parse(l.orders||'[]')}))
       };
       return json(data);
@@ -579,7 +584,7 @@ function saveSlips(ss, slips) {
   if (!slips.length) return;
   const headers = ['id','name','orders','createdAt'];
   sh.getRange(1,1,1,headers.length).setValues([headers]);
-  sh.getRange(2,1,slips.length,headers.length).setValues(slips.map(s=>[s.id,s.name,JSON.stringify(s.orders),s.createdAt]));
+  sh.getRange(2,1,slips.length,headers.length).setValues(slips.map(s=>[s.id,s.name,JSON.stringify(s.orderGroups||[]),s.createdAt]));
 }
 
 function saveLogs(ss, logs) {
@@ -1008,16 +1013,35 @@ function saveMenuEdit() {
 }
 
 // ===== SLIPS =====
-function calcTotal(slip) { return slip.orders.reduce((s,o) => s + Number(o.price)*Number(o.qty), 0); }
+function calcTotal(slip) {
+  const groups = slip.orderGroups || [];
+  return groups.reduce((s, g) => s + g.items.reduce((s2, o) => s2 + Number(o.price)*Number(o.qty), 0), 0);
+}
 function renderSlips() {
   const grid = document.getElementById('slip-grid');
   if (!slips.length) { grid.innerHTML = '<div class="empty-state"><div class="empty-icon">🍺</div><div class="empty-text">伝票がありません<br>「新しい伝票」から追加してください</div></div>'; return; }
   grid.innerHTML = slips.map(slip => {
     const total = calcTotal(slip);
-    const itemRows = slip.orders.map(o => `<div class="slip-item-row"><span class="slip-item-name">${o.name}</span><span class="slip-item-qty">×${o.qty}</span><span class="slip-item-price">¥${(Number(o.price)*Number(o.qty)).toLocaleString()}</span></div>`).join('');
+    const groups = slip.orderGroups || [];
+    const groupHtml = groups.length ? groups.map(g => {
+      const itemRows = g.items.map((o,oi) => {
+        const chk = o.served ? 'checked' : '';
+        const rowCls = o.served ? 'slip-item-row served' : 'slip-item-row';
+        return `<div class="${rowCls}">
+          <div class="slip-item-check ${chk}" onclick="toggleServed('${slip.id}','${g.id}',${oi})">${o.served ? '✓' : ''}</div>
+          <span class="slip-item-name">${o.name}</span>
+          <span class="slip-item-qty">×${o.qty}</span>
+          <span class="slip-item-price">¥${(Number(o.price)*Number(o.qty)).toLocaleString()}</span>
+        </div>`;
+      }).join('');
+      return `<div class="slip-order-group">
+        <div class="slip-order-time">🕐 ${g.time}</div>
+        ${itemRows}
+      </div>`;
+    }).join('') : '<div style="color:var(--text-faint);font-size:13px;padding:6px 0;">注文なし</div>';
     return `<div class="slip-card">
       <div class="slip-header"><span class="slip-name">${slip.name}</span><span class="slip-total">¥${total.toLocaleString()}</span></div>
-      <div class="slip-items">${itemRows || '<div style="color:var(--text-faint);font-size:13px;padding:6px 0;">注文なし</div>'}</div>
+      <div class="slip-items">${groupHtml}</div>
       <div class="slip-footer">
         <button class="btn btn-amber btn-sm" style="flex:1" onclick="openOrderModal('${slip.id}')">＋ 注文追加</button>
         <button class="btn btn-green btn-sm" style="flex:1" onclick="openCheckoutModal('${slip.id}')">会計</button>
@@ -1026,6 +1050,15 @@ function renderSlips() {
       </div>
     </div>`;
   }).join('');
+}
+
+function toggleServed(slipId, groupId, itemIdx) {
+  const slip = slips.find(s=>s.id===slipId);
+  if (!slip) return;
+  const group = (slip.orderGroups||[]).find(g=>g.id===groupId);
+  if (!group) return;
+  group.items[itemIdx].served = !group.items[itemIdx].served;
+  renderSlips(); saveToGAS();
 }
 function openNewSlipModal() { document.getElementById('new-slip-name').value = ''; document.getElementById('new-slip-modal').classList.add('open'); setTimeout(()=>document.getElementById('new-slip-name').focus(),100); }
 function closeNewSlipModal() { document.getElementById('new-slip-modal').classList.remove('open'); }
@@ -1058,9 +1091,8 @@ function editSlipName(id) {
 function openOrderModal(slipId) {
   currentSlipId = slipId;
   const slip = slips.find(s=>s.id===slipId);
-  currentCart = {};
-  slip.orders.forEach(o => { currentCart[o.menuId] = Number(o.qty); });
-  document.getElementById('order-modal-title').textContent = `${slip.name} の注文`;
+  currentCart = {}; // 追加注文なので常に空から開始
+  document.getElementById('order-modal-title').textContent = `${slip.name} に追加注文`;
   modalCatFilter = 'すべて';
   renderModalCatFilter(); renderModalMenuGrid(); renderModalCart();
   document.getElementById('order-modal').classList.add('open');
@@ -1095,8 +1127,16 @@ function renderModalCart() {
 }
 function saveOrder() {
   const slip=slips.find(s=>s.id===currentSlipId); if(!slip) return;
-  slip.orders=Object.entries(currentCart).filter(([,q])=>q>0).map(([mid,qty])=>{const m=menus.find(m=>m.id===mid);return{menuId:mid,name:m.name,price:m.price,qty};});
-  closeOrderModal(); renderSlips(); saveToGAS(); showToast('注文を確定しました');
+  const items=Object.entries(currentCart).filter(([,q])=>q>0).map(([mid,qty])=>{
+    const m=menus.find(m=>m.id===mid);
+    return{menuId:mid,name:m.name,price:m.price,qty,served:false};
+  });
+  if(!items.length){showToast('メニューを選択してください');return;}
+  if(!slip.orderGroups) slip.orderGroups=[];
+  const now=new Date();
+  const time=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+  slip.orderGroups.push({id:genId(),time,items});
+  closeOrderModal(); renderSlips(); saveToGAS(); showToast('注文を追加しました（'+time+'）');
 }
 
 // ===== CHECKOUT =====
@@ -1105,8 +1145,16 @@ function openCheckoutModal(slipId) {
   const slip=slips.find(s=>s.id===slipId);
   document.getElementById('checkout-slip-name').textContent=slip.name;
   const total=calcTotal(slip);
-  document.getElementById('checkout-items').innerHTML=slip.orders.length
-    ? slip.orders.map(o=>`<div class="checkout-row"><div><div class="checkout-name">${o.name}</div><div class="checkout-detail">¥${Number(o.price).toLocaleString()} × ${o.qty}</div></div><div class="checkout-price">¥${(Number(o.price)*Number(o.qty)).toLocaleString()}</div></div>`).join('')
+  const groups = slip.orderGroups || [];
+  const allItems = groups.flatMap(g=>g.items);
+  // 同一メニューを合算して表示
+  const merged = {};
+  allItems.forEach(o=>{
+    if(!merged[o.menuId]) merged[o.menuId]={name:o.name,price:o.price,qty:0};
+    merged[o.menuId].qty+=Number(o.qty);
+  });
+  document.getElementById('checkout-items').innerHTML=Object.values(merged).length
+    ? Object.values(merged).map(o=>`<div class="checkout-row"><div><div class="checkout-name">${o.name}</div><div class="checkout-detail">¥${Number(o.price).toLocaleString()} × ${o.qty}</div></div><div class="checkout-price">¥${(Number(o.price)*Number(o.qty)).toLocaleString()}</div></div>`).join('')
     : '<div style="color:var(--text-faint);padding:12px 0">注文がありません</div>';
   document.getElementById('checkout-total').textContent=`¥${total.toLocaleString()}`;
   clearReceived();
@@ -1149,7 +1197,9 @@ function confirmCloseSlip() {
   const total=calcTotal(slip);
   showConfirm('会計を完了しますか？', `${slip.name}\n合計 ¥${total.toLocaleString()}`, () => {
     const now=new Date();
-    logs.unshift({id:genId(),name:slip.name,orders:slip.orders,total,closedAt:now.toISOString(),
+    // ログ用にorderGroupsを全アイテムフラット化
+    const allItems=(slip.orderGroups||[]).flatMap(g=>g.items.map(o=>({...o,orderTime:g.time})));
+    logs.unshift({id:genId(),name:slip.name,orders:allItems,total,closedAt:now.toISOString(),
       dateLabel:`${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日`,
       timeLabel:String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0')});
     slips=slips.filter(s=>s.id!==checkoutSlipId);
