@@ -101,7 +101,11 @@
   .slip-total { font-weight: 700; color: var(--amber); font-size: 15px; }
   .slip-items { padding: 10px 14px; }
   .slip-order-group { margin-bottom: 10px; }
-  .slip-order-time { font-size: 11px; font-weight: 700; color: var(--amber-dim); letter-spacing: 0.05em; padding: 4px 0 4px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+  .slip-order-time { font-size: 11px; font-weight: 700; color: var(--amber-dim); letter-spacing: 0.05em; padding: 4px 0 4px; border-bottom: 1px solid var(--border); margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }
+  .slip-group-del { background: none; border: none; color: var(--text-faint); font-size: 14px; cursor: pointer; padding: 0 4px; line-height: 1; }
+  .slip-group-del:hover { color: var(--red); }
+  .slip-item-del { background: none; border: none; color: var(--text-faint); font-size: 14px; cursor: pointer; padding: 0 4px; line-height: 1; flex-shrink: 0; }
+  .slip-item-del:hover { color: var(--red); }
   .slip-item-row { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); padding: 4px 0; border-bottom: 1px dashed var(--text-faint); }
   .slip-item-row:last-child { border-bottom: none; }
   .slip-item-row.served { opacity: 0.4; text-decoration: line-through; }
@@ -289,7 +293,8 @@
     <div id="sync-dot"></div>
     <span id="sync-msg">接続中...</span>
     <span style="flex:1"></span>
-    <button style="background:none;border:none;color:var(--text-faint);font-size:12px;cursor:pointer;" onclick="syncNow()">↻ 更新</button>
+    <button style="background:none;border:none;color:var(--text-faint);font-size:12px;cursor:pointer;" onclick="syncNow()" title="GASから最新データを読み込む（ローカルのデータは上書きされます）">↻ 読み込み</button>
+    <button style="background:none;border:none;color:var(--amber-dim);font-size:12px;cursor:pointer;font-weight:700;" onclick="manualSave()" title="今のデータをGASに保存する">↑ 保存</button>
   </div>
 
   <div class="tab-bar">
@@ -365,7 +370,8 @@
         <span class="settings-val" id="settings-last-sync">—</span>
       </div>
     </div>
-    <button class="btn btn-outline" style="width:100%;margin-bottom:10px;" onclick="syncNow()">↻ 今すぐ同期</button>
+    <button class="btn btn-outline" style="width:100%;margin-bottom:10px;" onclick="manualSave()">↑ 今のデータをGASに保存</button>
+    <button class="btn btn-outline" style="width:100%;margin-bottom:10px;" onclick="confirmSyncNow()">↻ GASから最新データを読み込む</button>
     <button class="btn btn-danger" style="width:100%;" onclick="resetSetup()">接続先URLを変更（再設定）</button>
   </div>
 </div>
@@ -726,6 +732,21 @@ async function saveToGAS() {
 }
 
 function syncNow() { loadFromGAS(); }
+
+// 手動保存（ローカル→GAS）
+function manualSave() {
+  showConfirm('GASに保存', '今のデータをGASに上書き保存しますか？', () => {
+    saveToGAS();
+    showToast('保存しました');
+  });
+}
+
+// 読み込み確認（GAS→ローカル、ローカルが消える）
+function confirmSyncNow() {
+  showConfirm('GASから読み込み', 'GASの最新データを読み込みます。\n現在のデータは上書きされます。よろしいですか？', () => {
+    loadFromGAS();
+  });
+}
 function fmtTime(d) { return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0'); }
 
 // ===== RENDER ALL =====
@@ -1032,10 +1053,14 @@ function renderSlips() {
           <span class="slip-item-name">${o.name}</span>
           <span class="slip-item-qty">×${o.qty}</span>
           <span class="slip-item-price">¥${(Number(o.price)*Number(o.qty)).toLocaleString()}</span>
+          <button class="slip-item-del" onclick="deleteOrderItem('${slip.id}','${g.id}',${oi})" title="この1品を削除">✕</button>
         </div>`;
       }).join('');
       return `<div class="slip-order-group">
-        <div class="slip-order-time">🕐 ${g.time}</div>
+        <div class="slip-order-time">
+          <span>🕐 ${g.time}</span>
+          <button class="slip-group-del" onclick="deleteOrderGroup('${slip.id}','${g.id}')" title="この時刻の注文をまとめて削除">🗑 この注文を削除</button>
+        </div>
         ${itemRows}
       </div>`;
     }).join('') : '<div style="color:var(--text-faint);font-size:13px;padding:6px 0;">注文なし</div>';
@@ -1050,6 +1075,30 @@ function renderSlips() {
       </div>
     </div>`;
   }).join('');
+}
+
+function deleteOrderGroup(slipId, groupId) {
+  const slip = slips.find(s=>s.id===slipId); if(!slip) return;
+  const g = (slip.orderGroups||[]).find(g=>g.id===groupId);
+  if(!g) return;
+  showConfirm('注文グループを削除', g.time + ' の注文をまとめて削除しますか？', () => {
+    slip.orderGroups = slip.orderGroups.filter(g=>g.id!==groupId);
+    renderSlips(); saveToGAS(); showToast('削除しました');
+  });
+}
+
+function deleteOrderItem(slipId, groupId, itemIdx) {
+  const slip = slips.find(s=>s.id===slipId); if(!slip) return;
+  const g = (slip.orderGroups||[]).find(g=>g.id===groupId); if(!g) return;
+  const item = g.items[itemIdx];
+  showConfirm('注文を削除', `「${item.name}」を削除しますか？`, () => {
+    g.items.splice(itemIdx, 1);
+    // アイテムが空になったらグループごと削除
+    if(g.items.length === 0) {
+      slip.orderGroups = slip.orderGroups.filter(gr=>gr.id!==groupId);
+    }
+    renderSlips(); saveToGAS(); showToast('削除しました');
+  });
 }
 
 function toggleServed(slipId, groupId, itemIdx) {
