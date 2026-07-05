@@ -92,7 +92,10 @@
   label { font-size: 13px; color: var(--text-dim); margin-bottom: 6px; display: block; }
 
   /* ===== ORDERS ===== */
-  .orders-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .orders-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .sort-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .sort-btn { padding: 6px 11px; border-radius: 20px; background: var(--surface2); border: 1.5px solid var(--border); color: var(--text-dim); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .sort-btn.active { background: rgba(168,120,40,0.2); border-color: var(--amber-dim); color: var(--amber); }
   .slip-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
   .slip-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); overflow: hidden; }
   .slip-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: var(--surface2); border-bottom: 1px solid var(--border); }
@@ -309,6 +312,13 @@
     <div class="orders-header">
       <span class="section-title">伝票一覧</span>
       <button class="btn btn-amber btn-sm" onclick="openNewSlipModal()">＋ 新しい伝票</button>
+    </div>
+    <div class="sort-bar">
+      <button class="sort-btn active" onclick="setSort('created')" id="sort-created">作成順</button>
+      <button class="sort-btn" onclick="setSort('name')" id="sort-name">五十音順</button>
+      <button class="sort-btn" onclick="setSort('latest')" id="sort-latest">最新注文順</button>
+      <button class="sort-btn" onclick="setSort('unserved')" id="sort-unserved">未提供多い順</button>
+      <button class="sort-btn" onclick="setSort('total')" id="sort-total">金額多い順</button>
     </div>
     <div id="slip-grid" class="slip-grid"></div>
   </div>
@@ -1045,6 +1055,49 @@ function saveMenuEdit() {
 }
 
 // ===== SLIPS =====
+// ===== SORT =====
+let currentSort = 'created';
+
+function setSort(key) {
+  currentSort = key;
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('sort-' + key);
+  if (btn) btn.classList.add('active');
+  renderSlips();
+}
+
+function sortedSlips() {
+  const arr = [...slips];
+  switch(currentSort) {
+    case 'created':
+      return arr.sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
+    case 'name':
+      return arr.sort((a,b) => (a.name||'').localeCompare(b.name||'', 'ja'));
+    case 'latest': {
+      const lastOrder = s => {
+        const groups = s.orderGroups || [];
+        if (!groups.length) return 0;
+        const times = groups.map(g => {
+          const [h,m] = (g.time||'00:00').split(':').map(Number);
+          return h * 60 + m;
+        });
+        return Math.max(...times);
+      };
+      return arr.sort((a,b) => lastOrder(b) - lastOrder(a));
+    }
+    case 'unserved': {
+      const unservedCount = s => (s.orderGroups||[])
+        .flatMap(g => g.items||[])
+        .filter(o => !o.served).length;
+      return arr.sort((a,b) => unservedCount(b) - unservedCount(a));
+    }
+    case 'total':
+      return arr.sort((a,b) => calcTotal(b) - calcTotal(a));
+    default:
+      return arr;
+  }
+}
+
 function calcTotal(slip) {
   const groups = slip.orderGroups || [];
   return groups.reduce((s, g) => s + g.items.reduce((s2, o) => s2 + Number(o.price)*Number(o.qty), 0), 0);
@@ -1052,7 +1105,7 @@ function calcTotal(slip) {
 function renderSlips() {
   const grid = document.getElementById('slip-grid');
   if (!slips.length) { grid.innerHTML = '<div class="empty-state"><div class="empty-icon">🍺</div><div class="empty-text">伝票がありません<br>「新しい伝票」から追加してください</div></div>'; return; }
-  grid.innerHTML = slips.map(slip => {
+  grid.innerHTML = sortedSlips().map(slip => {
     const total = calcTotal(slip);
     const groups = slip.orderGroups || [];
     const groupHtml = groups.length ? groups.map(g => {
@@ -1075,8 +1128,10 @@ function renderSlips() {
         ${itemRows}
       </div>`;
     }).join('') : '<div style="color:var(--text-faint);font-size:13px;padding:6px 0;">注文なし</div>';
+    const unserved = (slip.orderGroups||[]).flatMap(g=>g.items||[]).filter(o=>!o.served).length;
+    const badge = unserved > 0 ? `<span style="background:var(--red-dim);color:#f0c0b0;border:1px solid var(--red);border-radius:10px;font-size:11px;font-weight:700;padding:1px 7px;margin-left:6px;">未提供 ${unserved}</span>` : '';
     return `<div class="slip-card">
-      <div class="slip-header"><span class="slip-name">${slip.name}</span><span class="slip-total">¥${total.toLocaleString()}</span></div>
+      <div class="slip-header"><span class="slip-name">${slip.name}${badge}</span><span class="slip-total">¥${total.toLocaleString()}</span></div>
       <div class="slip-items">${groupHtml}</div>
       <div class="slip-footer">
         <button class="btn btn-amber btn-sm" style="flex:1" onclick="openOrderModal('${slip.id}')">＋ 注文追加</button>
