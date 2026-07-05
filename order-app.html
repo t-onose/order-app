@@ -529,8 +529,20 @@ function doGet(e) {
       const data = {
         categories: getSheet(ss,'categories').getDataRange().getValues().flat().filter(Boolean),
         menus: sheetToObjects(getSheet(ss,'menus')),
-        slips: sheetToObjects(getSheet(ss,'slips')).map(s=>({...s,orderGroups:JSON.parse(s.orders||'[]')})),
-        logs:  sheetToObjects(getSheet(ss,'logs')).map(l=>({...l,orders:JSON.parse(l.orders||'[]')}))
+        slips: sheetToObjects(getSheet(ss,'slips')).map(s=>{
+          let og=[];
+          try{ og=JSON.parse(s.orders||'[]'); }catch(e){}
+          // 旧形式（ordersが [{menuId,name,price,qty}] の配列）なら orderGroups に変換
+          if(og.length>0 && og[0] && og[0].menuId !== undefined && !og[0].items){
+            og=[{id:'legacy',time:'--:--',items:og.map(o=>({...o,served:false}))}];
+          }
+          return {...s, orderGroups: og};
+        }),
+        logs: sheetToObjects(getSheet(ss,'logs')).map(l=>{
+          let orders=[];
+          try{ orders=JSON.parse(l.orders||'[]'); }catch(e){}
+          return {...l, orders};
+        })
       };
       return json(data);
     }
@@ -590,7 +602,7 @@ function saveSlips(ss, slips) {
   if (!slips.length) return;
   const headers = ['id','name','orders','createdAt'];
   sh.getRange(1,1,1,headers.length).setValues([headers]);
-  sh.getRange(2,1,slips.length,headers.length).setValues(slips.map(s=>[s.id,s.name,JSON.stringify(s.orderGroups||[]),s.createdAt]));
+  sh.getRange(2,1,slips.length,headers.length).setValues(slips.map(s=>[s.id,s.name,JSON.stringify(s.orderGroups||[]),s.createdAt||'']));
 }
 
 function saveLogs(ss, logs) {
