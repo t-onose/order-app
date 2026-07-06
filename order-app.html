@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -93,6 +94,11 @@
 
   /* ===== ORDERS ===== */
   .orders-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .search-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; position: relative; }
+  .search-bar input { padding-left: 34px; background: var(--surface2); border: 1.5px solid var(--border); border-radius: 20px; font-size: 14px; }
+  .search-bar input:focus { border-color: var(--amber-dim); }
+  .search-icon { position: absolute; left: 12px; font-size: 15px; pointer-events: none; color: var(--text-faint); }
+  .search-clear { position: absolute; right: 10px; background: none; border: none; color: var(--text-faint); font-size: 16px; cursor: pointer; padding: 4px; display: none; }
   .sort-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
   .sort-btn { padding: 6px 11px; border-radius: 20px; background: var(--surface2); border: 1.5px solid var(--border); color: var(--text-dim); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
   .sort-btn.active { background: rgba(168,120,40,0.2); border-color: var(--amber-dim); color: var(--amber); }
@@ -312,6 +318,11 @@
     <div class="orders-header">
       <span class="section-title">伝票一覧</span>
       <button class="btn btn-amber btn-sm" onclick="openNewSlipModal()">＋ 新しい伝票</button>
+    </div>
+    <div class="search-bar">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="slip-search" placeholder="テーブル名・お客様名で検索" oninput="onSearchInput(this.value)" />
+      <button class="search-clear" id="search-clear-btn" onclick="clearSearch()">✕</button>
     </div>
     <div class="sort-bar">
       <button class="sort-btn active" onclick="setSort('created')" id="sort-created">作成順</button>
@@ -1057,6 +1068,20 @@ function saveMenuEdit() {
 // ===== SLIPS =====
 // ===== SORT =====
 let currentSort = 'created';
+let searchQuery = '';
+
+function onSearchInput(val) {
+  searchQuery = val.trim();
+  document.getElementById('search-clear-btn').style.display = searchQuery ? 'block' : 'none';
+  renderSlips();
+}
+
+function clearSearch() {
+  searchQuery = '';
+  document.getElementById('slip-search').value = '';
+  document.getElementById('search-clear-btn').style.display = 'none';
+  renderSlips();
+}
 
 function setSort(key) {
   currentSort = key;
@@ -1066,8 +1091,8 @@ function setSort(key) {
   renderSlips();
 }
 
-function sortedSlips() {
-  const arr = [...slips];
+function sortedSlips(src) {
+  const arr = [...(src || slips)];
   switch(currentSort) {
     case 'created':
       return arr.sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
@@ -1104,8 +1129,14 @@ function calcTotal(slip) {
 }
 function renderSlips() {
   const grid = document.getElementById('slip-grid');
+  // 検索フィルター
+  const filtered = searchQuery
+    ? slips.filter(s => s.name && s.name.includes(searchQuery))
+    : slips;
+
   if (!slips.length) { grid.innerHTML = '<div class="empty-state"><div class="empty-icon">🍺</div><div class="empty-text">伝票がありません<br>「新しい伝票」から追加してください</div></div>'; return; }
-  grid.innerHTML = sortedSlips().map(slip => {
+  if (!filtered.length) { grid.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-text">「' + searchQuery + '」に一致する伝票がありません</div></div>'; return; }
+  grid.innerHTML = sortedSlips(filtered).map(slip => {
     const total = calcTotal(slip);
     const groups = slip.orderGroups || [];
     const groupHtml = groups.length ? groups.map(g => {
