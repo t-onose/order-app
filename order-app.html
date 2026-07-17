@@ -560,7 +560,14 @@ function doGet(e) {
         logs: sheetToObjects(getSheet(ss,'logs')).map(l=>{
           let orders=[];
           try{ orders=JSON.parse(l.orders||'[]'); }catch(e){}
-          return {...l, orders};
+          return {
+            ...l,
+            orders,
+            dateLabel: String(l.dateLabel||''),
+            timeLabel: String(l.timeLabel||''),
+            total: Number(l.total||0),
+            stayMinutes: l.stayMinutes ? Number(l.stayMinutes) : null
+          };
         })
       };
       return json(data);
@@ -628,9 +635,18 @@ function saveLogs(ss, logs) {
   const sh = getSheet(ss,'logs');
   sh.clearContents();
   if (!logs.length) return;
-  const headers = ['id','name','orders','total','closedAt','dateLabel','timeLabel'];
+  const headers = ['id','name','orders','total','closedAt','dateLabel','timeLabel','stayMinutes'];
   sh.getRange(1,1,1,headers.length).setValues([headers]);
-  sh.getRange(2,1,logs.length,headers.length).setValues(logs.map(l=>headers.map(h=>l[h]??'')));
+  sh.getRange(2,1,logs.length,headers.length).setValues(logs.map(l=>[
+    l.id??'',
+    l.name??'',
+    JSON.stringify(l.orders||[]),
+    l.total??0,
+    l.closedAt??'',
+    String(l.dateLabel??''),
+    String(l.timeLabel??''),
+    l.stayMinutes??''
+  ]));
 }
 
 function json(data) {
@@ -1344,9 +1360,23 @@ function confirmCloseSlip() {
     const now=new Date();
     // ログ用にorderGroupsを全アイテムフラット化
     const allItems=(slip.orderGroups||[]).flatMap(g=>g.items.map(o=>({...o,orderTime:g.time})));
-    logs.unshift({id:genId(),name:slip.name,orders:allItems,total,closedAt:now.toISOString(),
+    // 初注文時刻から滞在時間を計算
+    const groups = slip.orderGroups||[];
+    let stayMinutes = null;
+    if(groups.length > 0) {
+      const firstTime = groups[0].time; // "HH:MM"
+      const [fh,fm] = firstTime.split(':').map(Number);
+      const nowMinutes = now.getHours()*60 + now.getMinutes();
+      const firstMinutes = fh*60 + fm;
+      let diff = nowMinutes - firstMinutes;
+      if(diff < 0) diff += 24*60; // 日またぎ対応
+      stayMinutes = diff;
+    }
+    logs.unshift({id:genId(),name:slip.name,orders:allItems,total,
+      closedAt:now.toISOString(),
       dateLabel:`${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日`,
-      timeLabel:String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0')});
+      timeLabel:String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0'),
+      stayMinutes});
     slips=slips.filter(s=>s.id!==checkoutSlipId);
     closeCheckoutModal(); renderSlips(); renderLog(); saveToGAS(); showToast('会計を完了しました');
   });
@@ -1357,19 +1387,48 @@ function renderLog() {
   const el=document.getElementById('log-list');
   if(!logs.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">📒</div><div class="empty-text">まだ会計ログがありません</div></div>';return;}
   const groups={};
-  logs.forEach(l=>{if(!groups[l.dateLabel])groups[l.dateLabel]=[];groups[l.dateLabel].push(l);});
-  el.innerHTML=Object.entries(groups).map(([date,entries])=>{
+  logs.forEach(l=>{const dl=String(l.dateLabel||'日付不明');if(!groups[dl])groups[dl]=[];groups[dl].push(l);});
+  el.innerHTML=Object.entries(groups).sort(([a],[b])=>b.localeCompare(a,'ja')).map(([date,entries])=>{
     const dayTotal=entries.reduce((s,l)=>s+Number(l.total),0);
     const cards=entries.map(log=>{
       const isSel=selectedLogIds.has(log.id);
-      const items=log.orders.map(o=>`${o.name} ×${o.qty}　¥${(Number(o.price)*Number(o.qty)).toLocaleString()}`).join('<br>');
+      // 注文をorderTime別にグループ化して表示
+      const orders = log.orders||[];
+      let itemsHtml = '';
+      if(orders.length === 0) {
+        itemsHtml = '（注文なし）';
+      } else {
+        // orderTimeがあればグループ表示、なければフラット表示
+        const hasOrderTime = orders.some(o=>o.orderTime);
+        if(hasOrderTime) {
+          const timeGroups = {};
+          orders.forEach(o=>{
+            const t = o.orderTime||'--:--';
+            if(!timeGroups[t]) timeGroups[t]=[];
+            timeGroups[t].push(o);
+          });
+          itemsHtml = Object.entries(timeGroups).map(([t,items])=>
+            `<div style="margin-bottom:4px;">
+              <span style="font-size:11px;color:var(--amber-dim);">🕐 ${t}</span><br>
+              ${items.map(o=>`${o.name} ×${o.qty}　¥${(Number(o.price)*Number(o.qty)).toLocaleString()}`).join('<br>')}
+            </div>`
+          ).join('');
+        } else {
+          itemsHtml = orders.map(o=>`${o.name} ×${o.qty}　¥${(Number(o.price)*Number(o.qty)).toLocaleString()}`).join('<br>');
+        }
+      }
+      // 滞在時間表示
+      const stayHtml = log.stayMinutes != null
+        ? `<div style="font-size:12px;color:var(--text-faint);margin-top:4px;">⏱ 滞在 ${Math.floor(log.stayMinutes/60)>0?Math.floor(log.stayMinutes/60)+'時間':''}${log.stayMinutes%60}分</div>`
+        : '';
       const ctrl=logSelectMode
         ?`<div class="log-checkbox ${isSel?'checked':''}" onclick="toggleLogSelect('${log.id}')">${isSel?'✓':''}</div>`
         :`<button class="log-card-del" onclick="deleteOneLog('${log.id}')">✕</button>`;
       return `<div class="log-card ${isSel?'selected':''}" data-id="${log.id}">${ctrl}
-        <div class="log-card-header"><span class="log-card-name">${log.name}</span><span class="log-card-time">${log.timeLabel}</span></div>
+        <div class="log-card-header"><span class="log-card-name">${log.name}</span><span class="log-card-time">${String(log.timeLabel||'')}</span></div>
         <div class="log-card-total">¥${Number(log.total).toLocaleString()}</div>
-        <div class="log-card-items">${items||'（注文なし）'}</div>
+        <div class="log-card-items">${itemsHtml}</div>
+        ${stayHtml}
       </div>`;
     }).join('');
     return `<div class="log-date-group"><div class="log-date-header"><span>${date}　${entries.length}件</span><span style="color:var(--amber);font-weight:700;">合計 ¥${dayTotal.toLocaleString()}</span></div>${cards}</div>`;
